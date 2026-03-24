@@ -1,214 +1,213 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { scheduleMedicineReminders, cancelMedicineReminders, requestPermissions } from '../utils/ReminderEngine';
+import { 
+    scheduleMedicineReminders, 
+    cancelMedicineReminders, 
+    requestPermissions,
+    stopSpeaking
+} from '../utils/ReminderEngine';
+import notifee, { EventType } from '@notifee/react-native';
+import { BACKEND_URL } from '../constants/api';
 
 const MedicineContext = createContext();
 
 export const MedicineProvider = ({ children }) => {
     const [prescriptions, setPrescriptions] = useState([]);
     const [adherenceLogs, setAdherenceLogs] = useState([]);
+    const [userData, setUserData] = useState(null);
+    const [isInitialized, setIsInitialized] = useState(false);
+    const [activeAlert, setActiveAlert] = useState(null);
+    const [preferredLanguage, setPreferredLanguage] = useState('en');
     const [skipCounts, setSkipCounts] = useState({});
+    const [snoozeCounts, setSnoozeCounts] = useState({});
+    const [ignoredCounts, setIgnoredCounts] = useState({});
+
+    const closeAlert = async () => {
+        stopSpeaking();
+        setActiveAlert(null);
+        await AsyncStorage.removeItem('pending_alarm');
+    };
+
+    const clearAllData = async () => {
+        try {
+            await AsyncStorage.multiRemove([
+                'prescriptions', 'adherenceLogs', 'skipCounts', 'snoozeCounts', 
+                'ignoredCounts', 'user', 'preferredLanguage', 'pending_alarm'
+            ]);
+            setUserData(null);
+            setPrescriptions([]);
+            setAdherenceLogs([]);
+            setSkipCounts({});
+            setSnoozeCounts({});
+            setIgnoredCounts({});
+            setActiveAlert(null);
+        } catch (e) { console.error(e); }
+    };
+
+    const initialize = async () => {
+        await requestPermissions();
+        
+        // Cold start detection
+        const initial = await notifee.getInitialNotification();
+        if (initial?.notification?.data?.medicineId) {
+            const data = initial.notification.data;
+            await AsyncStorage.setItem('pending_alarm', JSON.stringify({ 
+                medicineId: data.medicineId, 
+                slotKey: data.slotKey || data.medicineId,
+                lang: data.lang || 'en'
+            }));
+        }
+
+        const medicines = await loadData();
+        await checkPendingAlarm(medicines);
+        setIsInitialized(true);
+    };
 
     useEffect(() => {
-        const initialize = async () => {
-            await requestPermissions();
-            await loadData();
-        };
         initialize();
     }, []);
 
     const loadData = async () => {
         try {
-            const [storedPrescriptions, storedLogs, storedSkipCounts] = await Promise.all([
+            const [storedMeds, storedLogs, storedUser, storedLang, storedSkips, storedSnoozes, storedIgnored] = await Promise.all([
                 AsyncStorage.getItem('prescriptions'),
                 AsyncStorage.getItem('adherenceLogs'),
-                AsyncStorage.getItem('skipCounts')
+                AsyncStorage.getItem('user'),
+                AsyncStorage.getItem('preferredLanguage'),
+                AsyncStorage.getItem('skipCounts'),
+                AsyncStorage.getItem('snoozeCounts'),
+                AsyncStorage.getItem('ignoredCounts'),
             ]);
 
-            if (storedLogs) setAdherenceLogs(JSON.parse(storedLogs));
-            if (storedSkipCounts) setSkipCounts(JSON.parse(storedSkipCounts));
+            const medicines = storedMeds ? JSON.parse(storedMeds) : [];
+            setPrescriptions(medicines);
+            setAdherenceLogs(storedLogs ? JSON.parse(storedLogs) : []);
+            if (storedUser) setUserData(JSON.parse(storedUser));
+            if (storedLang) setPreferredLanguage(storedLang);
+            if (storedSkips) setSkipCounts(JSON.parse(storedSkips));
+            if (storedSnoozes) setSnoozeCounts(JSON.parse(storedSnoozes));
+            if (storedIgnored) setIgnoredCounts(JSON.parse(storedIgnored));
 
-            if (storedPrescriptions) {
-                const parsed = JSON.parse(storedPrescriptions);
-                // Perform sync on load: cancel completed courses
-                const now = new Date();
-                const updatedPrescriptions = await Promise.all(parsed.map(async (p) => {
-                    if (!p.medicines) return p;
-                    const updatedMedicines = await Promise.all(p.medicines.map(async (m) => {
-                        if (m.endDate && new Date(m.endDate) < now && m.notificationIds?.length > 0) {
-                            try {
-                                await cancelMedicineReminders(m.notificationIds);
-                            } catch (e) {
-                                console.error('Early cancellation failed', e);
-                            }
-                            return { ...m, notificationIds: [] };
-                        }
-                        return m;
-                    }));
-                    return { ...p, medicines: updatedMedicines };
-                }));
-
-                setPrescriptions(updatedPrescriptions);
-                await AsyncStorage.setItem('prescriptions', JSON.stringify(updatedPrescriptions));
-            }
-        } catch (error) {
-            console.error('Failed to load data:', error);
-        }
+            return medicines;
+        } catch (e) { return []; }
     };
 
-    const savePrescriptions = async (newPrescriptions) => {
+    const checkPendingAlarm = async (providedMeds) => {
         try {
-            await AsyncStorage.setItem('prescriptions', JSON.stringify(newPrescriptions));
-            setPrescriptions(newPrescriptions);
-        } catch (error) {
-            console.error('Failed to save prescriptions:', error);
-        }
-    };
-
-    const saveAdherenceLogs = async (newLogs) => {
-        try {
-            await AsyncStorage.setItem('adherenceLogs', JSON.stringify(newLogs));
-            setAdherenceLogs(newLogs);
-        } catch (error) {
-            console.error('Failed to save adherence logs:', error);
-        }
-    };
-
-    const saveSkipCounts = async (newSkipCounts) => {
-        try {
-            await AsyncStorage.setItem('skipCounts', JSON.stringify(newSkipCounts));
-            setSkipCounts(newSkipCounts);
-        } catch (error) {
-            console.error('Failed to save skip counts:', error);
-        }
-    };
-
-    const addPrescription = async (prescription) => {
-        try {
-            // Schedule notifications for each medicine
-            const medicinesWithIds = await Promise.all(prescription.medicines.map(async (med) => {
-                try {
-                    const ids = await scheduleMedicineReminders(med);
-                    return { ...med, notificationIds: ids };
-                } catch (e) {
-                    console.error(`Scheduling failed for ${med.name}`, e);
-                    return { ...med, notificationIds: [] };
+            const pendingStr = await AsyncStorage.getItem('pending_alarm');
+            if (pendingStr) {
+                const pending = JSON.parse(pendingStr);
+                const medsList = providedMeds || prescriptions;
+                let med = null;
+                for (const p of medsList) {
+                    med = (p.medicines || []).find(m => String(m.id) === String(pending.medicineId));
+                    if (med) break;
                 }
-            }));
+                
+                if (med) {
+                    setActiveAlert({ ...med, _slotKey: pending.slotKey, lang: pending.lang });
+                    return true;
+                }
+            }
+        } catch (e) { }
+        return false;
+    };
 
-            const newPrescription = {
-                ...prescription,
-                medicines: medicinesWithIds,
-                id: Date.now().toString(),
-                uploadDate: new Date().toISOString()
-            };
+    const logAdherence = async (medicineId, status, slotKey) => {
+        const newLog = {
+            id: Date.now().toString(),
+            medicineId,
+            slotKey: slotKey || medicineId,
+            status,
+            timestamp: new Date().toISOString(),
+        };
+        const updatedLogs = [newLog, ...adherenceLogs];
+        setAdherenceLogs(updatedLogs);
+        await AsyncStorage.setItem('adherenceLogs', JSON.stringify(updatedLogs));
+        if (status === 'taken') updateSkipCount(medicineId, 'reset');
+    };
 
-            const newPrescriptions = [newPrescription, ...prescriptions];
-            await savePrescriptions(newPrescriptions);
-            return true;
-        } catch (error) {
-            console.error('Failed to add prescription:', error);
-            return false;
+    const updateSkipCount = (medicineId, action) => {
+        const updated = { ...skipCounts };
+        const newVal = action === 'increment' ? (updated[medicineId] || 0) + 1 : 0;
+        updated[medicineId] = newVal;
+        setSkipCounts(updated);
+        AsyncStorage.setItem('skipCounts', JSON.stringify(updated));
+        return newVal;
+    };
+
+    const updateSnoozeCount = (medicineId, action) => {
+        const updated = { ...snoozeCounts };
+        const newVal = action === 'increment' ? (updated[medicineId] || 0) + 1 : 0;
+        updated[medicineId] = newVal;
+        setSnoozeCounts(updated);
+        AsyncStorage.setItem('snoozeCounts', JSON.stringify(updated));
+        return newVal;
+    };
+
+    const updateIgnoredCount = (medicineId, action) => {
+        const updated = { ...ignoredCounts };
+        const newVal = action === 'increment' ? (updated[medicineId] || 0) + 1 : 0;
+        updated[medicineId] = newVal;
+        setIgnoredCounts(updated);
+        AsyncStorage.setItem('ignoredCounts', JSON.stringify(updated));
+        return newVal;
+    };
+
+    const triggerEscalation = async (medicineName) => {
+        if (userData?.caretakerEmail && userData?.email) {
+            try {
+                await fetch(`${BACKEND_URL}/send-alert`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userEmail: userData.email,
+                        caretakerEmail: userData.caretakerEmail,
+                        medicineName: medicineName
+                    })
+                });
+            } catch (e) { }
         }
+    };
+
+    const addPrescription = async (p) => {
+        try {
+            const updated = [...prescriptions, p];
+            setPrescriptions(updated);
+            await AsyncStorage.setItem('prescriptions', JSON.stringify(updated));
+            for (const med of (p.medicines || [])) {
+                await scheduleMedicineReminders(med, preferredLanguage);
+            }
+            return true;
+        } catch (e) { return false; }
     };
 
     const deletePrescription = async (id) => {
         try {
-            const prescriptionToDelete = prescriptions.find(p => p.id === id);
-            if (prescriptionToDelete) {
-                for (const med of prescriptionToDelete.medicines) {
-                    try { await cancelMedicineReminders(med.notificationIds); } catch { /* ignore notification errors */ }
-                }
+            const updated = prescriptions.filter(p => p.id !== id);
+            setPrescriptions(updated);
+            await AsyncStorage.setItem('prescriptions', JSON.stringify(updated));
+            return true;
+        } catch (e) { return false; }
+    };
+
+    useEffect(() => {
+        const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+            if (type === EventType.DELIVERED || type === EventType.PRESS) {
+                checkPendingAlarm();
             }
-            const newPrescriptions = prescriptions.filter(p => p.id !== id);
-            await savePrescriptions(newPrescriptions);
-        } catch (error) {
-            console.error('Failed to delete prescription:', error);
-            throw error; // Let the UI handle it
-        }
-    };
-
-    const deleteMedicine = async (prescriptionId, medicineId) => {
-        try {
-            const newPrescriptions = await Promise.all(prescriptions.map(async (prescription) => {
-                if (prescription.id === prescriptionId) {
-                    const medToDelete = prescription.medicines.find(m => m.id === medicineId);
-                    if (medToDelete) {
-                        try { await cancelMedicineReminders(medToDelete.notificationIds); } catch { /* ignore */ }
-                    }
-                    const updatedMedicines = prescription.medicines.filter(m => m.id !== medicineId);
-                    return { ...prescription, medicines: updatedMedicines };
-                }
-                return prescription;
-            }));
-            await savePrescriptions(newPrescriptions);
-        } catch (error) {
-            console.error('Failed to delete medicine:', error);
-            throw error; // Let the UI handle it
-        }
-    };
-
-    const updateMedicine = async (prescriptionId, updatedMedicine) => {
-        try {
-            const newPrescriptions = prescriptions.map((prescription) => {
-                if (prescription.id !== prescriptionId) return prescription;
-                const updatedMedicines = prescription.medicines.map((m) =>
-                    m.id === updatedMedicine.id ? { ...m, ...updatedMedicine } : m
-                );
-                return { ...prescription, medicines: updatedMedicines };
-            });
-            await savePrescriptions(newPrescriptions);
-        } catch (error) {
-            console.error('Failed to update medicine:', error);
-            throw error;
-        }
-    };
-
-    const updateSkipCount = (medicineId, action) => {
-        const currentCount = skipCounts[medicineId] || 0;
-        let newCount = currentCount;
-
-        if (action === 'increment') {
-            newCount += 1;
-        } else if (action === 'reset') {
-            newCount = 0;
-        }
-
-        const newSkipCounts = { ...skipCounts, [medicineId]: newCount };
-        saveSkipCounts(newSkipCounts);
-        return newCount;
-    };
-
-    const logAdherence = (medicineId, status, slotKey) => {
-        const newLog = {
-            id: Date.now().toString(),
-            medicineId,
-            // slotKey distinguishes Morning/Afternoon/Night slots for the same medicine
-            // Falls back to medicineId for backward compatibility with old logs
-            slotKey: slotKey || medicineId,
-            status, // 'taken' | 'missed' | 'postponed'
-            timestamp: new Date().toISOString()
-        };
-        const newLogs = [newLog, ...adherenceLogs];
-        saveAdherenceLogs(newLogs);
-
-        // Auto-reset skip count if taken
-        if (status === 'taken') {
-            updateSkipCount(medicineId, 'reset');
-        }
-    };
+        });
+        return () => unsubscribe();
+    }, [prescriptions]);
 
     return (
         <MedicineContext.Provider value={{
-            prescriptions,
-            adherenceLogs,
-            skipCounts,
-            addPrescription,
-            deletePrescription,
-            deleteMedicine,
-            updateMedicine,
-            logAdherence,
-            updateSkipCount
+            prescriptions, adherenceLogs, userData, setUserData, isInitialized,
+            addPrescription, deletePrescription, logAdherence,
+            skipCounts, updateSkipCount, snoozeCounts, updateSnoozeCount,
+            ignoredCounts, updateIgnoredCount, triggerEscalation,
+            activeAlert, closeAlert, clearAllData,
+            preferredLanguage, setPreferredLanguage,
         }}>
             {children}
         </MedicineContext.Provider>

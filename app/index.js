@@ -1,104 +1,85 @@
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
+import {
+    View, StyleSheet, Image, Text, TouchableOpacity,
+    ActivityIndicator, ImageBackground
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
+import { useEffect } from 'react';
+import { useRouter } from 'expo-router';
+import { useMedicines } from '../context/MedicineContext';
 import { colors, spacing, radius, shadow } from '../constants/theme';
-
-const FEATURES = [
-    { icon: 'bell', label: 'Smart Reminders' },
-    { icon: 'file-medical', label: 'Scan Prescriptions' },
-    { icon: 'chart-line', label: 'Track Adherence' },
-];
+import { Ionicons } from '@expo/vector-icons';
 
 export default function WelcomeScreen() {
+    const { isInitialized, userData } = useMedicines();
     const router = useRouter();
+
+    useEffect(() => {
+        if (isInitialized && userData) {
+            console.log('[WelcomeScreen] Redirecting to home.');
+            router.replace('/(tabs)/home');
+        }
+    }, [isInitialized, userData]);
+
+    if (!isInitialized) {
+        return (
+            <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        );
+    }
+
+    if (userData) {
+        return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+    }
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+            <ImageBackground
+                source={{ uri: 'https://images.unsplash.com/photo-1576091160550-217359f42f57?w=800&q=80' }}
+                style={StyleSheet.absoluteFill}
+            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.7)' }]} />
 
-            <View style={styles.hero}>
-                <View style={styles.logoWrap}>
-                    <FontAwesome5 name="pills" size={38} color={colors.primary} />
+            <View style={styles.content}>
+                <View style={styles.logoCircle}>
+                    <Ionicons name="medical" size={40} color={colors.primary} />
                 </View>
-                <Text style={styles.appName}>MedReminder</Text>
-                <Text style={styles.tagline}>Your personal medication companion</Text>
-            </View>
+                <View style={styles.heroText}>
+                    <Text style={styles.title}>MedReminder</Text>
+                    <Text style={styles.subtitle}>Your daily health companion for medication tracking and reminders.</Text>
+                </View>
 
-            <View style={styles.features}>
-                {FEATURES.map((f) => (
-                    <View key={f.label} style={styles.featureRow}>
-                        <View style={styles.featureIcon}>
-                            <FontAwesome5 name={f.icon} size={14} color={colors.primary} />
-                        </View>
-                        <Text style={styles.featureText}>{f.label}</Text>
-                    </View>
-                ))}
-            </View>
+                <View style={styles.buttonGroup}>
+                    <TouchableOpacity
+                        style={styles.primaryBtn}
+                        onPress={() => router.push('/auth/login')}
+                    >
+                        <Text style={styles.primaryBtnText}>Get Started</Text>
+                        <Ionicons name="arrow-forward" size={18} color="#fff" />
+                    </TouchableOpacity>
 
-            <View style={styles.actions}>
-                <TouchableOpacity
-                    style={styles.primaryBtn}
-                    onPress={() => router.push('/auth/login')}
-                    activeOpacity={0.85}
-                >
-                    <Text style={styles.primaryBtnText}>Login</Text>
-                    <MaterialIcons name="arrow-forward" size={20} color="#fff" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.secondaryBtn}
-                    onPress={() => router.push('/auth/register')}
-                    activeOpacity={0.85}
-                >
-                    <Text style={styles.secondaryBtnText}>Create Account</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.secondaryBtn}
+                        onPress={() => router.push('/auth/register')}
+                    >
+                        <Text style={styles.secondaryBtnText}>Create Account</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    hero: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.xl },
-    logoWrap: {
-        width: 88, height: 88, borderRadius: 28,
-        backgroundColor: colors.primaryLight,
-        justifyContent: 'center', alignItems: 'center',
-        marginBottom: spacing.lg,
-        ...shadow.md,
-    },
-    appName: { fontSize: 34, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
-    tagline: { fontSize: 15, color: colors.textSecondary, marginTop: 6, textAlign: 'center' },
-    features: {
-        paddingHorizontal: spacing.xl,
-        paddingVertical: spacing.lg,
-        backgroundColor: colors.surface,
-        marginHorizontal: spacing.md,
-        borderRadius: radius.lg,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: 14,
-    },
-    featureRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    featureIcon: {
-        width: 32, height: 32, borderRadius: radius.sm,
-        backgroundColor: colors.primaryLight,
-        justifyContent: 'center', alignItems: 'center',
-    },
-    featureText: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
-    actions: { padding: spacing.lg, gap: 12 },
-    primaryBtn: {
-        backgroundColor: colors.primary,
-        height: 56, borderRadius: radius.md,
-        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
-        ...shadow.lg,
-    },
-    primaryBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-    secondaryBtn: {
-        height: 56, borderRadius: radius.md, borderWidth: 1.5,
-        borderColor: colors.border, justifyContent: 'center', alignItems: 'center',
-        backgroundColor: colors.surface,
-    },
-    secondaryBtnText: { color: colors.primary, fontSize: 17, fontWeight: '700' },
+    container: { flex: 1 },
+    content: { flex: 1, padding: 32, justifyContent: 'center', alignItems: 'center', gap: 40 },
+    logoCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', ...shadow.md },
+    heroText: { alignItems: 'center', gap: 12 },
+    title: { fontSize: 36, fontWeight: '900', color: colors.textPrimary, letterSpacing: -1 },
+    subtitle: { fontSize: 16, color: colors.textSecondary, textAlign: 'center', lineHeight: 24, paddingHorizontal: 20 },
+    buttonGroup: { width: '100%', gap: 16 },
+    primaryBtn: { flexDirection: 'row', backgroundColor: colors.primary, paddingVertical: 18, borderRadius: radius.xl, justifyContent: 'center', alignItems: 'center', gap: 10, ...shadow.md },
+    primaryBtnText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+    secondaryBtn: { paddingVertical: 18, borderRadius: radius.xl, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.5)' },
+    secondaryBtnText: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
 });
