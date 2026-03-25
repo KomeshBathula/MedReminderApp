@@ -34,24 +34,37 @@ function SettingRow({ icon, label, value, onPress, rightElement, danger }) {
 
 // ─── EditProfileModal ──────────────────────────────────────────────────────────
 function EditProfileModal({ visible, user, onSave, onClose }) {
+    const [username, setUsername] = useState(user?.username || '');
     const [email, setEmail] = useState(user?.email || '');
     const [caretaker, setCaretaker] = useState(user?.caretakerEmail || '');
     const [loading, setLoading] = useState(false);
     const { showSuccess, showError } = useToast();
 
-    useEffect(() => { setEmail(user?.email || ''); setCaretaker(user?.caretakerEmail || ''); }, [user]);
+    useEffect(() => {
+        setUsername(user?.username || '');
+        setEmail(user?.email || '');
+        setCaretaker(user?.caretakerEmail || '');
+    }, [user]);
 
     const handleSave = async () => {
+        if (!username.trim()) { showError('Username cannot be empty.'); return; }
         if (!email.trim()) { showError('Email cannot be empty.'); return; }
         setLoading(true);
         try {
-            const updated = { ...user, email: email.trim(), caretakerEmail: caretaker.trim() };
+            const updated = {
+                ...user,
+                username: username.trim(),
+                email: email.trim(),
+                caretakerEmail: caretaker.trim()
+            };
             await AsyncStorage.setItem('user', JSON.stringify(updated));
             showSuccess('Profile updated successfully!');
             onSave(updated);
         } catch {
             showError('Failed to update profile.');
-        } finally { setLoading(false); }
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -60,6 +73,10 @@ function EditProfileModal({ visible, user, onSave, onClose }) {
                 <View style={m.sheet}>
                     <View style={m.handle} />
                     <Text style={m.title}>Edit Profile</Text>
+
+                    <Text style={m.label}>Your Name</Text>
+                    <TextInput style={m.input} value={username} onChangeText={setUsername}
+                        autoCapitalize="words" />
 
                     <Text style={m.label}>Email Address</Text>
                     <TextInput style={m.input} value={email} onChangeText={setEmail}
@@ -118,9 +135,9 @@ export default function ProfileScreen() {
         missed: adherenceLogs.filter(l => l.status === 'missed').length,
     };
 
-    const initials = user?.email
-        ? user.email.slice(0, 2).toUpperCase()
-        : '??';
+    const initials = user?.username
+        ? user.username.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+        : user?.email ? user.email.slice(0, 2).toUpperCase() : '??';
 
     return (
         <SafeAreaView style={s.container}>
@@ -134,7 +151,8 @@ export default function ProfileScreen() {
                     <View style={s.avatarRing}>
                         <Text style={s.avatarText}>{initials}</Text>
                     </View>
-                    <Text style={s.userName}>{user?.email || 'Not logged in'}</Text>
+                    <Text style={s.userName}>{user?.username || user?.email || 'Not logged in'}</Text>
+                    {user?.username && <Text style={s.userEmail}>{user.email}</Text>}
                     {user?.caretakerEmail && (
                         <View style={s.caretakerRow}>
                             <Ionicons name="people-outline" size={13} color={colors.textMuted} />
@@ -270,6 +288,7 @@ const s = StyleSheet.create({
     avatarRing: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
     avatarText: { fontSize: 26, fontWeight: '900', color: '#fff' },
     userName: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+    userEmail: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
     caretakerRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
     caretakerTxt: { fontSize: 12, color: colors.textMuted },
     editBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12, backgroundColor: colors.primaryLight, paddingHorizontal: 16, paddingVertical: 8, borderRadius: radius.full },

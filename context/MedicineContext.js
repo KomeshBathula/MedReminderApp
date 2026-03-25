@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { 
-    scheduleMedicineReminders, 
-    cancelMedicineReminders, 
+import {
+    scheduleMedicineReminders,
+    cancelMedicineReminders,
     requestPermissions,
     stopSpeaking
 } from '../utils/ReminderEngine';
@@ -31,7 +31,7 @@ export const MedicineProvider = ({ children }) => {
     const clearAllData = async () => {
         try {
             await AsyncStorage.multiRemove([
-                'prescriptions', 'adherenceLogs', 'skipCounts', 'snoozeCounts', 
+                'prescriptions', 'adherenceLogs', 'skipCounts', 'snoozeCounts',
                 'ignoredCounts', 'user', 'preferredLanguage', 'pending_alarm'
             ]);
             setUserData(null);
@@ -46,13 +46,13 @@ export const MedicineProvider = ({ children }) => {
 
     const initialize = async () => {
         await requestPermissions();
-        
+
         // Cold start detection
         const initial = await notifee.getInitialNotification();
         if (initial?.notification?.data?.medicineId) {
             const data = initial.notification.data;
-            await AsyncStorage.setItem('pending_alarm', JSON.stringify({ 
-                medicineId: data.medicineId, 
+            await AsyncStorage.setItem('pending_alarm', JSON.stringify({
+                medicineId: data.medicineId,
                 slotKey: data.slotKey || data.medicineId,
                 lang: data.lang || 'en'
             }));
@@ -103,7 +103,7 @@ export const MedicineProvider = ({ children }) => {
                     med = (p.medicines || []).find(m => String(m.id) === String(pending.medicineId));
                     if (med) break;
                 }
-                
+
                 if (med) {
                     setActiveAlert({ ...med, _slotKey: pending.slotKey, lang: pending.lang });
                     return true;
@@ -114,14 +114,33 @@ export const MedicineProvider = ({ children }) => {
     };
 
     const logAdherence = async (medicineId, status, slotKey) => {
-        const newLog = {
-            id: Date.now().toString(),
-            medicineId,
-            slotKey: slotKey || medicineId,
-            status,
-            timestamp: new Date().toISOString(),
-        };
-        const updatedLogs = [newLog, ...adherenceLogs];
+        const today = new Date().toISOString().split('T')[0];
+        const existingIndex = adherenceLogs.findIndex(log => 
+            log.slotKey === (slotKey || medicineId) && 
+            log.timestamp.startsWith(today)
+        );
+
+        let updatedLogs;
+        if (existingIndex !== -1) {
+            // Update existing log for this slot today
+            updatedLogs = [...adherenceLogs];
+            updatedLogs[existingIndex] = {
+                ...updatedLogs[existingIndex],
+                status,
+                timestamp: new Date().toISOString()
+            };
+        } else {
+            // Add new log
+            const newLog = {
+                id: Date.now().toString(),
+                medicineId,
+                slotKey: slotKey || medicineId,
+                status,
+                timestamp: new Date().toISOString(),
+            };
+            updatedLogs = [newLog, ...adherenceLogs];
+        }
+
         setAdherenceLogs(updatedLogs);
         await AsyncStorage.setItem('adherenceLogs', JSON.stringify(updatedLogs));
         if (status === 'taken') updateSkipCount(medicineId, 'reset');
@@ -193,12 +212,22 @@ export const MedicineProvider = ({ children }) => {
 
     useEffect(() => {
         const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+            if (activeAlert) return; // Prevent duplicate/stacking alerts
+
             if (type === EventType.DELIVERED || type === EventType.PRESS) {
-                checkPendingAlarm();
+                const data = detail.notification?.data;
+                if (data?.medicineId) {
+                    await AsyncStorage.setItem('pending_alarm', JSON.stringify({ 
+                        medicineId: data.medicineId, 
+                        slotKey: data.slotKey || data.medicineId,
+                        lang: data.lang || 'en'
+                    }));
+                }
+                await checkPendingAlarm();
             }
         });
         return () => unsubscribe();
-    }, [prescriptions]);
+    }, [prescriptions, activeAlert]);
 
     return (
         <MedicineContext.Provider value={{

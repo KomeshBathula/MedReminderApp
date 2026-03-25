@@ -39,6 +39,9 @@ export default function LoginScreen() {
             }
             const user = JSON.parse(userData);
             if (user.email === email.trim() && user.password === password) {
+                if (user.preferredLanguage) {
+                    await AsyncStorage.setItem('preferredLanguage', user.preferredLanguage);
+                }
                 showSuccess('Login successful! Welcome back.');
                 setTimeout(() => router.replace('/(tabs)/home'), 500);
             } else {

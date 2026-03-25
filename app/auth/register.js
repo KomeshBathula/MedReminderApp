@@ -21,9 +21,11 @@ export default function RegisterScreen() {
     const router = useRouter();
     const { showSuccess, showError } = useToast();
 
+    const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [caretakerEmail, setCaretakerEmail] = useState('');
+    const [language, setLanguage] = useState('en'); // Default to English
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState({});
@@ -32,6 +34,8 @@ export default function RegisterScreen() {
 
     const validate = () => {
         const e = {};
+        if (!username.trim()) e.username = 'Username is required';
+        else if (username.trim().length < 3) e.username = 'Minimum 3 characters';
         if (!email.trim()) e.email = 'Email is required';
         else if (!validateEmail(email)) e.email = 'Enter a valid email address';
         if (!password) e.password = 'Password is required';
@@ -57,10 +61,13 @@ export default function RegisterScreen() {
                 }
             }
             await AsyncStorage.setItem('user', JSON.stringify({
+                username: username.trim(),
                 email: email.trim(),
                 password,
                 caretakerEmail: caretakerEmail.trim(),
+                preferredLanguage: language
             }));
+            await AsyncStorage.setItem('preferredLanguage', language);
             showSuccess('Account created! Redirecting you now...');
             setTimeout(() => router.replace('/(tabs)/home'), 800);
         } catch {
@@ -79,6 +86,18 @@ export default function RegisterScreen() {
                 </View>
 
                 <View style={styles.form}>
+                    {/* Username */}
+                    <View style={styles.fieldGroup}>
+                        <Text style={styles.label}>Your Name</Text>
+                        <View style={[styles.inputWrap, errors.username && styles.inputError]}>
+                            <MaterialIcons name="person" size={18} color={errors.username ? colors.error : colors.textMuted} style={styles.icon} />
+                            <TextInput style={styles.input} placeholder="John Doe" placeholderTextColor={colors.textMuted}
+                                value={username} onChangeText={(t) => { setUsername(t); setErrors(p => ({ ...p, username: '' })); }}
+                                autoCapitalize="words" editable={!loading} />
+                        </View>
+                        {errors.username ? <Text style={styles.errorText}>{errors.username}</Text> : null}
+                    </View>
+
                     {/* Email */}
                     <View style={styles.fieldGroup}>
                         <Text style={styles.label}>Your Email</Text>
@@ -125,6 +144,28 @@ export default function RegisterScreen() {
                                 autoCapitalize="none" keyboardType="email-address" editable={!loading} />
                         </View>
                         {errors.caretaker ? <Text style={styles.errorText}>{errors.caretaker}</Text> : null}
+                    </View>
+
+                    {/* Language Selection */}
+                    <View style={styles.fieldGroup}>
+                        <Text style={styles.label}>Preferred Language</Text>
+                        <Text style={styles.hint}>Language for voice alarms and reminders</Text>
+                        <View style={styles.langRow}>
+                            <TouchableOpacity 
+                                style={[styles.langBtn, language === 'en' && styles.langBtnActive]} 
+                                onPress={() => setLanguage('en')}
+                            >
+                                <Ionicons name="language" size={18} color={language === 'en' ? '#fff' : colors.textSecondary} />
+                                <Text style={[styles.langBtnTxt, language === 'en' && styles.langBtnTxtActive]}>English</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.langBtn, language === 'te' && styles.langBtnActive]} 
+                                onPress={() => setLanguage('te')}
+                            >
+                                <MaterialIcons name="translate" size={18} color={language === 'te' ? '#fff' : colors.textSecondary} />
+                                <Text style={[styles.langBtnTxt, language === 'te' && styles.langBtnTxtActive]}>Telugu (తెలుగు)</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
 
@@ -181,4 +222,12 @@ const styles = StyleSheet.create({
     link: { alignItems: 'center', padding: spacing.sm },
     linkText: { fontSize: 14, color: colors.textSecondary },
     linkBold: { color: colors.primary, fontWeight: '700' },
+    langRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+    langBtn: {
+        flex: 1, height: 50, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.surface
+    },
+    langBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    langBtnTxt: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+    langBtnTxtActive: { color: '#fff', fontWeight: '800' },
 });

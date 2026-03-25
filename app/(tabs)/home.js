@@ -282,7 +282,7 @@ export default function HomeScreen() {
         finally { setActionLoading(false); }
     };
 
-    const firstName = userData.email?.split('@')[0] || 'there';
+    const firstName = userData.username?.split(' ')[0] || userData.email?.split('@')[0] || 'there';
 
     return (
         <SafeAreaView style={s.container}>
@@ -294,6 +294,21 @@ export default function HomeScreen() {
                 </View>
                 <TouchableOpacity style={s.dashBtn} onPress={() => router.push('/adherence-dashboard')}>
                     <Ionicons name="stats-chart" size={20} color={colors.primary} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Test Alarm Debug Button (Optional, can be removed later) */}
+            <View style={{ paddingHorizontal: spacing.md, paddingVertical: 4 }}>
+                <TouchableOpacity 
+                    style={s.testBtn} 
+                    onPress={async () => {
+                        const { scheduleAdhocNotification } = require('../../utils/ReminderEngine');
+                        showInfo('Testing alarm in 5 seconds...');
+                        await scheduleAdhocNotification({ name: 'Test Medicine', id: 'test' }, 0.1); 
+                    }}
+                >
+                    <Ionicons name="bug-outline" size={14} color={colors.textMuted} />
+                    <Text style={s.testBtnTxt}>Troubleshoot Alarms (Test Now)</Text>
                 </TouchableOpacity>
             </View>
 
@@ -366,6 +381,8 @@ const s = StyleSheet.create({
     emptySub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
     addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: radius.md, marginTop: 8 },
     addBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+    testBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 8, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+    testBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
 });
 
 const tg = StyleSheet.create({

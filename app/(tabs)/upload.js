@@ -49,7 +49,8 @@ export default function UploadScreen() {
     const [isFreqModalVisible, setFreqModalVisible] = useState(false);
     const [freqTarget, setFreqTarget] = useState(null);
     const [isPickerVisible, setPickerVisible] = useState(false);
-    const [pickerTarget, setPickerTarget] = useState(null);
+    const [manualTimes, setManualTimes] = useState(['09:00']);
+    const [pickerTarget, setPickerTarget] = useState(null); // { id, index } or { id: 'manual', index }
 
     const pickImage = async () => {
         try {
@@ -96,14 +97,21 @@ export default function UploadScreen() {
 
     const addManual = () => {
         if (!name.trim()) { showError('Medicine name is required.'); return; }
-        setMedicinesList(prev => [...prev, { id: Date.now().toString(), name: name.trim(), dosage: dosage.trim(), frequency: frequency || 'Once daily', duration: duration.trim(), times: getDefaultTimes(frequency || 'Once daily') }]);
-        setName(''); setDosage(''); setFrequency(''); setDuration('');
+        setMedicinesList(prev => [...prev, { id: Date.now().toString(), name: name.trim(), dosage: dosage.trim(), frequency: frequency || 'Once daily', duration: duration.trim(), times: [...manualTimes] }]);
+        setName(''); setDosage(''); setFrequency(''); setDuration(''); setManualTimes(['09:00']);
         showSuccess(`${name.trim()} added to list.`);
     };
 
     const removeMedicine = (id) => { setMedicinesList(prev => prev.filter(m => m.id !== id)); };
 
     const updateField = (id, field, value) => {
+        if (id === 'manual') {
+            if (field === 'frequency') {
+                setFrequency(value);
+                setManualTimes(getDefaultTimes(value));
+            }
+            return;
+        }
         setMedicinesList(prev => prev.map(m => {
             if (m.id !== id) return m;
             const updated = { ...m, [field]: value };
@@ -116,11 +124,22 @@ export default function UploadScreen() {
         if (date && pickerTarget) {
             const h = date.getHours().toString().padStart(2, '0');
             const mi = date.getMinutes().toString().padStart(2, '0');
-            setMedicinesList(prev => prev.map(m => {
-                if (m.id !== pickerTarget.id) return m;
-                const times = [...m.times]; times[pickerTarget.index] = `${h}:${mi}`;
-                return { ...m, times };
-            }));
+            const newTime = `${h}:${mi}`;
+
+            if (pickerTarget.id === 'manual') {
+                setManualTimes(prev => {
+                    const t = [...prev];
+                    t[pickerTarget.index] = newTime;
+                    return t;
+                });
+            } else {
+                setMedicinesList(prev => prev.map(m => {
+                    if (m.id !== pickerTarget.id) return m;
+                    const times = [...m.times]; 
+                    times[pickerTarget.index] = newTime;
+                    return { ...m, times };
+                }));
+            }
         }
         setPickerVisible(false);
     };
@@ -233,6 +252,17 @@ export default function UploadScreen() {
                         </TouchableOpacity>
                     </View>
                     <TextInput style={styles.manualInput} placeholder="Duration (Days)" value={duration} onChangeText={setDuration} keyboardType="numeric" />
+                    
+                    <Text style={styles.timeLabel}>Reminder Times</Text>
+                    <View style={styles.timeRow}>
+                        {manualTimes.map((t, ti) => (
+                            <TouchableOpacity key={ti} style={styles.timeChip} onPress={() => { setPickerTarget({ id: 'manual', index: ti }); setPickerVisible(true); }}>
+                                <Ionicons name="time" size={14} color={colors.primary} />
+                                <Text style={styles.timeChipTxt}>{fmt12(t)}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
                     <TouchableOpacity style={styles.addBtn} onPress={addManual}>
                         <MaterialIcons name="add" size={20} color="#fff" />
                         <Text style={styles.addBtnTxt}>Add to List</Text>
@@ -248,7 +278,20 @@ export default function UploadScreen() {
             </ScrollView>
 
             <DateTimePickerModal isVisible={isPickerVisible} mode="time" onConfirm={handleConfirmTime} onCancel={() => setPickerVisible(false)} is24Hour={true}
-                date={(() => { if (!pickerTarget) return new Date(); const med = medicinesList.find(m => m.id === pickerTarget.id); if (!med) return new Date(); const [h, m] = med.times[pickerTarget.index].split(':'); const d = new Date(); d.setHours(parseInt(h), parseInt(m)); return d; })()} />
+                date={(() => { 
+                    if (!pickerTarget) return new Date(); 
+                    let timeStr = '09:00';
+                    if (pickerTarget.id === 'manual') {
+                        timeStr = manualTimes[pickerTarget.index];
+                    } else {
+                        const med = medicinesList.find(m => m.id === pickerTarget.id); 
+                        if (med) timeStr = med.times[pickerTarget.index];
+                    }
+                    const [h, m] = timeStr.split(':'); 
+                    const d = new Date(); 
+                    d.setHours(parseInt(h), parseInt(m)); 
+                    return d; 
+                })()} />
 
             <Modal transparent visible={isFreqModalVisible} animationType="fade" onRequestClose={() => setFreqModalVisible(false)}>
                 <TouchableOpacity style={styles.modalBg} activeOpacity={1} onPress={() => setFreqModalVisible(false)}>
@@ -256,7 +299,7 @@ export default function UploadScreen() {
                         <Text style={styles.freqModalTitle}>Select Frequency</Text>
                         {FREQUENCY_OPTIONS.map(opt => (
                             <TouchableOpacity key={opt} style={styles.freqOpt} onPress={() => {
-                                if (freqTarget === 'manual') setFrequency(opt); else updateField(freqTarget, 'frequency', opt);
+                                if (freqTarget === 'manual') updateField('manual', 'frequency', opt); else updateField(freqTarget, 'frequency', opt);
                                 setFreqModalVisible(false);
                             }}>
                                 <Text style={styles.freqOptTxt}>{opt}</Text>
